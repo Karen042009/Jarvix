@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from datetime import datetime
 import numpy as np
@@ -14,6 +13,7 @@ import re
 from typing import Dict, Any, List
 from pathlib import Path
 import json
+import asyncio
 
 # --- CONFIGURATION ---
 genai.configure(api_key=settings.GOOGLE_API_KEY)
@@ -34,153 +34,113 @@ SAFETY_SETTINGS = {
 }
 
 
-# --- DYNAMIC MULTI-STEP AI ANALYSIS ---
-def get_ai_plan(
-    df_head: str, columns: List[str], df_stats: str = "", num_charts: int = NUM_CHARTS
-) -> Dict[str, Any]:
-    """Step 1: Ask Jarvix to create a strategic plan as a JSON object."""
+# --- STEP 1: GET BRIEF ANALYSIS ---
+async def get_brief_analysis(user_prompt: str, df: pd.DataFrame, file_name: str, websocket=None) -> str:
+    """Get concise analysis from Gemini (limit to 500 words)."""
     model = genai.GenerativeModel("gemini-flash-latest")
-    prompt = f"""
-You are an expert strategic data analyst and business intelligence specialist. Based on the data preview, columns, and statistics, create a comprehensive analysis plan.
+    
+    df_preview = df.head(10).to_string()
+    df_stats = df.describe().to_string()
+    columns_list = ", ".join(df.columns.tolist())
+    
+    enhanced_prompt = f"""You are an expert data analyst. Analyze this CSV file BRIEFLY (max 500 words).
 
-**Data Preview (df.head()):**
-{df_head}
+**User's Request:** {user_prompt}
 
-**Data Statistics:**
+**Data:**
+- File: {file_name}
+- Rows: {len(df)} | Columns: {len(df.columns)}
+- Columns: {columns_list}
+
+**Data Preview:**
+{df_preview}
+
+**Statistics:**
 {df_stats}
 
-**Columns available:**
-{columns}
+Provide 3-5 KEY INSIGHTS only. Be concise and specific. Focus on actionable findings."""
 
-**Your output MUST be a valid JSON object** with three keys:
-1.  `"strategic_recommendations"`: A list of 3-6 strings with specific, actionable advice (e.g., "Identify trends in 'column_X'", "Segment data by 'column_Y'", "Detect outliers in 'column_Z'").
-2.  `"feature_engineering_code"`: A string containing Python code to preprocess the data and create new features. This code will modify the DataFrame `df`. IMPORTANT: Only use variables that are already defined (df, pd, np, os). Do NOT reference variables that don't exist. Each line should be self-contained and not depend on variables created in previous lines unless you explicitly create them.
-3.  `"visualization_code"`: A string containing Python code to generate exactly {num_charts} INSIGHTFUL visualizations that tell a story. This code MUST use the processed `df` and save each plot to a file in `TEMP_CHART_DIR`, appending the path to a `chart_paths` list. IMPORTANT: Use `plt.savefig()` to save each chart with high DPI (150), append path to `chart_paths`, then call `plt.close()` to free memory. Make visualizations professional with good titles and labels.
-
-Example JSON output structure:
-```json
-{{
-    "strategic_recommendations": [
-        "Browser and device distribution shows high mobile traffic",
-        "Identify top IP addresses and geographic patterns",
-        "Analyze referrer sources to understand traffic channels",
-        "Examine temporal patterns in user access",
-        "Correlation between device type and user engagement"
-    ],
-    "feature_engineering_code": "df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')\\ndf['hour'] = df['timestamp'].dt.hour\\ndf['day_of_week'] = df['timestamp'].dt.day_name()\\ndf['is_mobile_or_tablet'] = df['is_mobile'] | df['is_tablet']",
-    "visualization_code": "plt.figure(figsize=(14, 6))\\nplt.hist([df[df['is_mobile']==True].shape[0], df[df['is_pc']==True].shape[0]], label=['Mobile', 'PC'])\\nplt.title('Device Type Distribution', fontsize=16, fontweight='bold')\\nplt.xlabel('Device Type', fontsize=12)\\nplt.ylabel('Count', fontsize=12)\\nchart_path = os.path.join(TEMP_CHART_DIR, '01_devices.png')\\nplt.savefig(chart_path, dpi=150, bbox_inches='tight')\\nchart_paths.append(chart_path)\\nplt.close()\\n\\nplt.figure(figsize=(14, 6))\\nbrowser_counts = df['browser'].value_counts().head(10)\\nplt.bar(range(len(browser_counts)), browser_counts.values)\\nplt.title('Top 10 Browsers', fontsize=16, fontweight='bold')\\nplt.xticks(range(len(browser_counts)), browser_counts.index, rotation=45)\\nchart_path = os.path.join(TEMP_CHART_DIR, '02_browsers.png')\\nplt.savefig(chart_path, dpi=150, bbox_inches='tight')\\nchart_paths.append(chart_path)\\nplt.close()"
-}}
-
-**CRITICAL RULES - MATPLOTLIB VISUALIZATION FUNCTIONS ONLY:**
-- Use ONLY these functions: plt.figure(), plt.plot(), plt.bar(), plt.hist(), plt.scatter(), plt.boxplot(), plt.pie(), plt.xlim(), plt.ylim(), plt.title(), plt.xlabel(), plt.ylabel(), plt.xticks(), plt.legend()
-- Use sns.heatmap() and sns.countplot() from seaborn when appropriate
-- NEVER use sns.pie() - use plt.pie() instead
-- NEVER use functions that don't exist in matplotlib/seaborn
-- Always save with: plt.savefig(path, dpi=150, bbox_inches='tight') then plt.close()
-- Only use variables: df, pd, np, plt, sns, os, TEMP_CHART_DIR, chart_paths
-- Create new columns in df during feature engineering
-- Each visualization should have a clear title and axis labels
-"""
     try:
-        response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
-        # Clean the response to ensure it's valid JSON
-        json_text_match = re.search(r"```json\n([\s\S]*?)```", response.text)
-        if not json_text_match:
-            # Try plain text search if the markdown block is missing
-            json_text_match = re.search(r"\{[\s\S]*\}", response.text)
-
-        if not json_text_match:
-            raise ValueError("AI response did not contain a valid JSON block.")
-
-        json_text = json_text_match.group(0).replace("```json\n", "").replace("```", "")
-        plan = json.loads(json_text)
-        return plan
-    except (ValueError, AttributeError, json.JSONDecodeError) as e:
-        raise ValueError(
-            f"Failed to parse AI plan. Jarvix's raw response might be invalid. Error: {e}\nResponse: {response.text}"
+        analysis_text = ""
+        response = await model.generate_content_async(
+            enhanced_prompt, stream=True, safety_settings=SAFETY_SETTINGS
         )
-
-
-# --- REPORTING ---
-def generate_pdf_report(
-    base_dir: Path, csv_path: str, summary: Dict[str, Any], charts: List[str]
-) -> str:
-    """Generates a PDF report from the analysis results."""
-    templates_dir = base_dir / "templates_pdf"
-    env = Environment(loader=FileSystemLoader(templates_dir))
-
-    try:
-        template = env.get_template("professional_report_template.html")
+        
+        async for chunk in response:
+            if chunk and chunk.text:
+                analysis_text += chunk.text
+                if websocket:
+                    await websocket.send_json({
+                        "type": "stream",
+                        "message": chunk.text
+                    })
+        
+        return analysis_text
     except Exception as e:
-        raise FileNotFoundError(
-            f"Could not find 'professional_report_template.html' in '{templates_dir}'. Error: {e}"
-        )
-
-    now = datetime.now()
-    base_path = Path(csv_path)
-    dataset_slug = base_path.stem
-    dataset_label = dataset_slug.replace("_", " ").replace("-", " ").title()
-    timestamp = now.strftime("%Y%m%d_%H%M%S")
-
-    template_vars = {
-        "report_title": f"Automated Analysis of {base_path.name}",
-        "custom_title": f"Jarvix Insights · {dataset_label}",
-        "generation_date": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "file_name": base_path.name,
-        "file_path": csv_path,
-        "strategic_recommendations": summary.pop("strategic_recommendations", []),
-        "analysis_summary": summary,
-        "chart_paths": charts,
-    }
-    html_out = template.render(template_vars)
-    report_filename = f"Jarvix_Report_{dataset_slug}_{timestamp}.pdf"
-    report_path = os.path.join(OUTPUT_DIR, report_filename)
-    HTML(string=html_out, base_url=str(TEMP_CHART_DIR)).write_pdf(report_path)
-    return report_path
+        return f"❌ **Analysis Error:** {str(e)}"
 
 
-# --- MAIN PIPELINE ---
-def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
-    """The main multi-step function Jarvix will call."""
+# --- STEP 2: GENERATE VISUALIZATION CODE ---
+async def get_visualization_code(user_prompt: str, df: pd.DataFrame) -> str:
+    """Ask Gemini to generate Python code for {NUM_CHARTS} visualizations."""
+    model = genai.GenerativeModel("gemini-flash-latest")
+    
+    columns_list = ", ".join(df.columns.tolist())
+    sample_data = df.head(5).to_string()
+    
+    viz_prompt = f"""You MUST generate exactly {NUM_CHARTS} matplotlib visualizations.
+
+CRITICAL: Return ONLY valid Python code in a code block (```python ... ```). No explanations, no text before or after.
+
+**Context:**
+- User wants: {user_prompt}
+- DataFrame columns: {columns_list}
+- Rows: {len(df)}
+- Sample data preview:
+{sample_data}
+
+**Requirements:**
+1. Create EXACTLY {NUM_CHARTS} separate matplotlib figures
+2. Each chart MUST:
+   - Use plt.figure(figsize=(12, 6))
+   - Include meaningful title and labels
+   - Save to: chart_path = os.path.join(TEMP_CHART_DIR, 'chart_N.png')
+   - Call plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+   - Append to chart_paths: chart_paths.append(chart_path)
+   - Call plt.close() to free memory
+3. Use ONLY these: plt, sns, pd, np, df, os, matplotlib, seaborn
+4. Never reference columns that don't exist
+5. Handle missing values gracefully
+
+Return the code wrapped in ```python ... ``` markers."""
+
     try:
-        # Ensure TEMP_CHART_DIR exists before starting analysis
-        os.makedirs(TEMP_CHART_DIR, exist_ok=True)
+        response = model.generate_content(viz_prompt, safety_settings=SAFETY_SETTINGS)
+        code_text = response.text.strip()
+        
+        # Extract code from markdown block
+        if "```python" in code_text:
+            code = code_text.split("```python")[1].split("```")[0].strip()
+        elif "```" in code_text:
+            code = code_text.split("```")[1].split("```")[0].strip()
+        else:
+            code = code_text
+        
+        return code
+    except Exception as e:
+        return f"# Error generating visualization code: {str(e)}"
 
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found at '{file_path}'.")
-        df = (
-            pd.read_csv(file_path)
-            if file_path.endswith(".csv")
-            else pd.read_excel(file_path)
-        )
 
-        # --- STEP 0: GATHER ENHANCED STATISTICS ---
-        df_stats = df.describe().to_string()
-
-        # --- STEP 1: GET THE AI'S STRATEGIC PLAN ---
-        ai_plan = get_ai_plan(
-            df.head().to_string(), list(df.columns), df_stats, NUM_CHARTS
-        )
-        feature_engineering_code = ai_plan.get("feature_engineering_code", "")
-        visualization_code = ai_plan.get("visualization_code", "")
-        strategic_recommendations = ai_plan.get("strategic_recommendations", [])
-
-        # --- STEP 2: EXECUTE FEATURE ENGINEERING ---
-        # Create a safe savefig wrapper that ensures directories exist
-        original_savefig = plt.savefig
-
-        def safe_savefig(*args, **kwargs):
-            """Wrapper for plt.savefig that ensures parent directory exists."""
-            if args:
-                filepath = args[0]
-                parent_dir = os.path.dirname(filepath)
-                if parent_dir and not os.path.exists(parent_dir):
-                    os.makedirs(parent_dir, exist_ok=True)
-            return original_savefig(*args, **kwargs)
-
-        # Monkey-patch plt.savefig to use our safe version
-        plt.savefig = safe_savefig
-
+# --- STEP 3: EXECUTE VISUALIZATION CODE ---
+def generate_charts(viz_code: str, df: pd.DataFrame, websocket_callback=None) -> List[str]:
+    """Execute visualization code and return list of chart paths."""
+    chart_paths = []
+    
+    if not viz_code or viz_code.startswith("# Error"):
+        print(f"⚠️ Skipping visualization generation: {viz_code[:50]}")
+        return []
+    
+    try:
         local_scope = {
             "df": df,
             "pd": pd,
@@ -189,71 +149,283 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
             "np": np,
             "os": os,
             "TEMP_CHART_DIR": TEMP_CHART_DIR,
-            "chart_paths": [],
-            "analysis_summary": {
-                "strategic_recommendations": strategic_recommendations
-            },
+            "chart_paths": chart_paths,
         }
-        if feature_engineering_code:
-            try:
-                exec(feature_engineering_code, globals(), local_scope)
-            except NameError as e:
-                error_msg = f"NameError in feature engineering code: {str(e)}. The code tried to use a variable that doesn't exist."
-                return f"❌ **Feature Engineering Error:** {error_msg}\n\nPlease ensure the code only uses variables that are already defined (df, pd, np, os)."
-            except Exception as e:
-                error_msg = f"Error in feature engineering code: {str(e)}"
-                return f"❌ **Feature Engineering Error:** {error_msg}"
+        
+        # Execute the visualization code
+        exec(viz_code, {"__builtins__": __builtins__}, local_scope)
+        
+        # Get the chart paths that were generated
+        generated_paths = local_scope.get("chart_paths", [])
+        
+        # Verify charts exist
+        valid_paths = [p for p in generated_paths if os.path.exists(p)]
+        
+        if websocket_callback:
+            websocket_callback(f"Generated {len(valid_paths)} visualization(s)")
+        
+        print(f"✅ Successfully generated {len(valid_paths)} chart(s)")
+        return valid_paths
+        
+    except Exception as e:
+        error_msg = f"⚠️ Visualization Error: {type(e).__name__}: {str(e)}"
+        print(error_msg)
+        if websocket_callback:
+            websocket_callback(error_msg)
+        return []
 
-        # --- STEP 3: EXECUTE VISUALIZATIONS ---
-        if visualization_code:
-            # Ensure chart_paths list exists in local scope
-            if "chart_paths" not in local_scope:
-                local_scope["chart_paths"] = []
-            try:
-                exec(visualization_code, globals(), local_scope)
-            except NameError as e:
-                error_msg = f"NameError in visualization code: {str(e)}. The code tried to use a variable that doesn't exist."
-                return f"❌ **Visualization Error:** {error_msg}\n\nPlease ensure the code only uses variables that are already defined (df, pd, np, plt, sns, os, TEMP_CHART_DIR, chart_paths)."
-            except Exception as e:
-                error_msg = f"Error in visualization code: {str(e)}"
-                return f"❌ **Visualization Error:** {error_msg}"
 
-        # Restore original plt.savefig
-        plt.savefig = original_savefig
-
-        chart_paths = local_scope.get("chart_paths", [])
-        # Ensure we only keep up to NUM_CHARTS charts
-        if len(chart_paths) > NUM_CHARTS:
-            # Keep first NUM_CHARTS, remove the extra files if they exist
-            extra = chart_paths[NUM_CHARTS:]
-            chart_paths = chart_paths[:NUM_CHARTS]
-            for p in extra:
-                try:
-                    if os.path.exists(p):
-                        os.remove(p)
-                except Exception:
-                    pass
-        elif len(chart_paths) < NUM_CHARTS:
-            # Not enough charts were produced; include a warning in the summary
-            analysis_summary.setdefault("warnings", []).append(
-                f"Requested {NUM_CHARTS} charts but AI produced {len(chart_paths)}."
-            )
-        analysis_summary = local_scope.get("analysis_summary", {})
-        if not chart_paths:
-            return "⚠️ **Warning:** The AI-generated plan did not produce any valid chart files."
-
-        # --- STEP 4: GENERATE PDF ---
-        report_path = generate_pdf_report(
-            base_dir, file_path, analysis_summary, chart_paths
+# --- MAIN PIPELINE: Analysis + Visualizations + PDF ---
+async def run_dynamic_analysis_async(base_dir: Path, file_path: str, user_prompt: str, websocket=None) -> str:
+    """
+    Main analysis function with visualizations:
+    1. Get concise analysis from Gemini (500 words max)
+    2. Generate visualization code
+    3. Create charts
+    4. Build PDF with analysis + charts
+    """
+    try:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found at '{file_path}'.")
+        
+        df = (
+            pd.read_csv(file_path)
+            if file_path.endswith(".csv")
+            else pd.read_excel(file_path)
         )
-
-        # Clean up temporary chart images
-        for path in chart_paths:
-            if os.path.exists(path):
-                os.remove(path)
-
-        return f"👍 **Success:** AI-driven analysis is complete. Strategic report saved to: `{report_path}`"
-    except Exception:
+        
+        file_name = os.path.basename(file_path)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_filename = Path(file_path).stem
+        
+        # Ensure temp chart directory exists
+        os.makedirs(TEMP_CHART_DIR, exist_ok=True)
+        
+        # Step 1: Get brief analysis
+        if websocket:
+            await websocket.send_json({
+                "type": "stream",
+                "message": "📊 Analyzing dataset...\n"
+            })
+        
+        analysis_text = await get_brief_analysis(user_prompt, df, file_name, websocket)
+        
+        if "❌" in analysis_text:
+            return analysis_text
+        
+        # Step 2: Generate visualization code
+        if websocket:
+            await websocket.send_json({
+                "type": "stream",
+                "message": f"\n📈 Generating Python code for {NUM_CHARTS} visualization(s)...\n"
+            })
+        
+        viz_code = await get_visualization_code(user_prompt, df)
+        
+        # Debug: log code generation
+        if viz_code.startswith("# Error"):
+            if websocket:
+                await websocket.send_json({
+                    "type": "stream",
+                    "message": f"⚠️ {viz_code}\n"
+                })
+            print(f"❌ Visualization code generation failed: {viz_code}")
+        else:
+            print(f"✅ Generated {len(viz_code)} chars of visualization code")
+        
+        # Step 3: Execute visualization code
+        def ws_callback(msg):
+            if websocket:
+                import asyncio
+                try:
+                    asyncio.create_task(websocket.send_json({
+                        "type": "stream",
+                        "message": msg
+                    }))
+                except:
+                    pass
+        
+        chart_paths = generate_charts(viz_code, df, ws_callback)
+        
+        chart_count = len(chart_paths) if chart_paths else 0
+        if websocket:
+            await websocket.send_json({
+                "type": "stream",
+                "message": f"✅ Successfully created {chart_count} visualization(s)\n"
+            })
+        
+        # Step 4: Build PDF with analysis + charts
+        # Convert charts to base64 to embed in PDF
+        import base64
+        chart_html = ""
+        for i, chart_path in enumerate(chart_paths, 1):
+            if os.path.exists(chart_path):
+                try:
+                    with open(chart_path, 'rb') as f:
+                        chart_data = base64.b64encode(f.read()).decode('utf-8')
+                    chart_html += f"""
+                    <div style="margin: 20px 0; text-align: center; page-break-inside: avoid;">
+                        <img src="data:image/png;base64,{chart_data}" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px;">
+                    </div>
+                    """
+                except Exception as e:
+                    print(f"⚠️ Could not embed chart {i}: {e}")
+        
+        html_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    color: #2c3e50;
+                    max-width: 950px;
+                    margin: 0 auto;
+                    padding: 30px;
+                    background: #f8f9fa;
+                }}
+                .header {{
+                    text-align: center;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    margin-bottom: 30px;
+                }}
+                .title {{
+                    font-size: 32px;
+                    font-weight: bold;
+                    margin: 0;
+                }}
+                .subtitle {{
+                    font-size: 16px;
+                    opacity: 0.9;
+                    margin-top: 8px;
+                }}
+                .timestamp {{
+                    font-size: 13px;
+                    opacity: 0.8;
+                    margin-top: 10px;
+                }}
+                .file-info {{
+                    background: white;
+                    padding: 20px;
+                    border-left: 5px solid #667eea;
+                    margin-bottom: 25px;
+                    border-radius: 5px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .file-info strong {{
+                    color: #667eea;
+                }}
+                .section {{
+                    background: white;
+                    padding: 25px;
+                    margin-bottom: 25px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                }}
+                .section-title {{
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: #667eea;
+                    margin-top: 0;
+                    margin-bottom: 15px;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid #ecf0f1;
+                }}
+                .analysis-text {{
+                    font-size: 14px;
+                    line-height: 1.8;
+                    color: #444;
+                    text-align: justify;
+                }}
+                .charts-container {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 20px;
+                }}
+                .chart-wrapper {{
+                    text-align: center;
+                    border: 1px solid #ecf0f1;
+                    padding: 15px;
+                    border-radius: 8px;
+                    background: #f8f9fa;
+                }}
+                .chart-wrapper img {{
+                    max-width: 100%;
+                    height: auto;
+                }}
+                .footer {{
+                    text-align: center;
+                    margin-top: 40px;
+                    padding-top: 20px;
+                    border-top: 2px solid #ecf0f1;
+                    color: #7f8c8d;
+                    font-size: 12px;
+                }}
+                .footer-brand {{
+                    font-weight: bold;
+                    color: #667eea;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="title">🤖 Jarvix 👋 Completed</div>
+                <div class="subtitle">Data Analysis Report</div>
+                <div class="timestamp">Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+            </div>
+            
+            <div class="file-info">
+                <strong>📊 Dataset:</strong> {file_name}<br>
+                <strong>📈 Dimensions:</strong> {len(df):,} rows × {len(df.columns)} columns
+            </div>
+            
+            <div class="section">
+                <div class="section-title">📋 Analysis & Insights</div>
+                <div class="analysis-text">
+                    {analysis_text.replace(chr(10), '<br>')}
+                </div>
+            </div>
+            
+            {f'<div class="section"><div class="section-title">📊 Visualizations</div><div class="charts-container">{chart_html}</div></div>' if chart_paths else ''}
+            
+            <div class="footer">
+                <div>Report generated by <span class="footer-brand">Jarvix 👋 Completed</span></div>
+                <div style="margin-top: 10px;">
+                    ✨ Each analysis is unique and tailored to your specific request
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        pdf_filename = f"Jarvix_Analysis_{base_filename}_{timestamp}.pdf"
+        pdf_path = os.path.join(settings.OUTPUT_DIR, pdf_filename)
+        
+        os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
+        HTML(string=html_template).write_pdf(pdf_path)
+        
+        # Clean up temporary charts
+        for chart_path in chart_paths:
+            try:
+                if os.path.exists(chart_path):
+                    os.remove(chart_path)
+            except:
+                pass
+        
+        if websocket:
+            await websocket.send_json({
+                "type": "stream",
+                "message": f"\n✅ **PDF Report Generated!** Saved to: `{pdf_path}`\n"
+            })
+        
+        return f"✅ **Analysis Complete!** PDF saved to: `{pdf_path}`"
+        
+    except Exception as e:
         tb_lines = traceback.format_exc().splitlines()
-        error_details = "\n".join(tb_lines)
-        return f"❌ **Data Science Agent Error:** A critical error occurred.\n<pre><code>{error_details}</code></pre>"
+        error_details = "\n".join(tb_lines[-5:])
+        return f"❌ **Data Science Agent Error:** {str(e)}\n\n{error_details}"
