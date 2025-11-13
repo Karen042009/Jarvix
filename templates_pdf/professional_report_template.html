@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ report_title }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1.2cm 1.5cm;
+            @top-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 9pt;
+                color: #7b8193;
+                font-family: 'DejaVu Sans', sans-serif;
+            }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'DejaVu Sans', 'Segoe UI', Tahoma, sans-serif;
+            font-size: 11pt;
+            line-height: 1.65;
+            color: #1f2937;
+            background: #f7f9fc;
+        }
+
+        .cover {
+            background: linear-gradient(135deg, #5b75f0 0%, #7f4bc0 100%);
+            color: #ffffff;
+            margin: -1.2cm -1.5cm 28px -1.5cm;
+            padding: 42px 36px;
+            border-bottom-left-radius: 22px;
+            border-bottom-right-radius: 22px;
+            box-shadow: 0 20px 45px rgba(91, 117, 240, 0.35);
+        }
+
+        .cover-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11pt;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+            opacity: 0.85;
+        }
+
+        .cover-title {
+            font-size: 30pt;
+            font-weight: 700;
+            margin-top: 10px;
+            letter-spacing: -1px;
+        }
+
+        .cover-subtitle {
+            margin-top: 12px;
+            font-size: 13pt;
+            opacity: 0.92;
+        }
+
+        .cover-grid {
+            margin-top: 26px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .meta-card {
+            background: rgba(255, 255, 255, 0.14);
+            border-radius: 14px;
+            padding: 16px 18px;
+            min-height: 85px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .meta-label {
+            font-size: 9pt;
+            letter-spacing: 1px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .meta-value {
+            font-size: 11pt;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .cover-note {
+            margin-top: 28px;
+            font-size: 9.5pt;
+            background: rgba(15, 23, 42, 0.18);
+            border-left: 3px solid rgba(255, 255, 255, 0.65);
+            padding: 14px 18px;
+            border-radius: 12px;
+            opacity: 0.92;
+        }
+
+        .container {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 26px;
+        }
+
+        .section {
+            background: linear-gradient(135deg, #ffffff 0%, #f2f4ff 100%);
+            border: 1px solid #e4e8ff;
+            border-radius: 18px;
+            padding: 22px 26px;
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+            page-break-inside: avoid;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 17pt;
+            font-weight: 700;
+            color: #4256d0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: "";
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #5b75f0, #7f4bc0);
+            box-shadow: 0 0 12px rgba(91, 117, 240, 0.4);
+        }
+
+        .section-badge {
+            background: rgba(91, 117, 240, 0.12);
+            color: #4256d0;
+            font-size: 9pt;
+            padding: 6px 12px;
+            border-radius: 999px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .section p { margin-bottom: 12px; }
+
+        ul { list-style: none; margin: 0; padding: 0; }
+
+        li {
+            position: relative;
+            padding-left: 28px;
+            margin-bottom: 10px;
+        }
+
+        li::before {
+            content: "✔";
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: #5b75f0;
+            font-size: 11pt;
+        }
+
+        li strong { color: #4256d0; }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        .kpi-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 18px;
+            border: 1px solid rgba(66, 86, 208, 0.18);
+            box-shadow: inset 0 0 0 1px rgba(66, 86, 208, 0.05);
+            text-align: center;
+        }
+
+        .kpi-label {
+            font-size: 9pt;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+
+        .kpi-value {
+            font-size: 19pt;
+            font-weight: 700;
+            color: #4256d0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 10pt;
+        }
+
+        th, td {
+            padding: 11px 12px;
+            border-bottom: 1px solid #e4e8ff;
+            text-align: left;
+        }
+
+        thead tr {
+            background: rgba(91, 117, 240, 0.09);
+            color: #334155;
+        }
+
+        tbody tr:nth-child(2n) { background: rgba(91, 117, 240, 0.03); }
+
+        .example-box {
+            background: rgba(91, 117, 240, 0.08);
+            border-left: 4px solid #5b75f0;
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin: 14px 0;
+        }
+
+        .example-title { color: #4256d0; font-weight: 600; margin-bottom: 6px; }
+        .example-text { font-size: 10pt; color: #4b5563; }
+
+        .charts-section { page-break-before: always; }
+
+        .chart-container {
+            page-break-inside: avoid;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 520px;
+            margin-bottom: 24px;
+        }
+
+        .chart-wrapper {
+            width: 100%;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+            border: 1px solid rgba(91, 117, 240, 0.12);
+            text-align: center;
+        }
+
+        .chart-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            color: white;
+            background: linear-gradient(135deg, #5b75f0, #7f4bc0);
+            font-weight: 600;
+            margin-bottom: 14px;
+        }
+
+        .chart-wrapper img {
+            max-width: 100%;
+            border-radius: 10px;
+            border: 1px solid rgba(91, 117, 240, 0.12);
+        }
+
+        .empty-state {
+            text-align: center;
+            font-style: italic;
+            color: #6b7280;
+            padding: 40px;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: -20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 8.5pt;
+            color: #9aa0b8;
+        }
+
+        .footer strong { color: #4256d0; }
+    </style>
+</head>
+<body>
+    <div class="cover">
+        <div class="cover-brand">Jarvix Final · Cognitive Operating System</div>
+        <div class="cover-title">{{ custom_title or "Intelligence Analysis Report" }}</div>
+        <p class="cover-subtitle">Automated insights for <strong>{{ file_name }}</strong> generated on {{ generation_date }}.</p>
+        <div class="cover-grid">
+            <div class="meta-card">
+                <div class="meta-label">File Path</div>
+                <div class="meta-value">{{ file_path }}</div>
+            </div>
+            <div class="meta-card">
+                <div class="meta-label">File Type</div>
+                <div class="meta-value">{{ file_name.split('.')[-1]|upper }}</div>
+            </div>
+            <div class="meta-card">
+                <div class="meta-label">Visualisations Generated</div>
+                <div class="meta-value">{{ chart_paths|length if chart_paths else 0 }}</div>
+            </div>
+        </div>
+        <div class="cover-note">
+            Jarvix analysed only the path you supplied. For safety, remove or mask any confidential data before sharing this report.
+        </div>
+    </div>
+
+    <div class="container">
+        {% if strategic_recommendations %}
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Strategic Recommendations</div>
+                <div class="section-badge">AI perspective</div>
+            </div>
+            <p>Jarvix identified the following focus areas to maximise impact:</p>
+            <ul>
+                {% for item in strategic_recommendations %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if analysis_summary %}
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Key Metrics & Signals</div>
+                <div class="section-badge">Snapshot</div>
+            </div>
+            <p>Quantitative indicators extracted from the supplied dataset.</p>
+            <div class="kpi-grid">
+                {% for key, value in analysis_summary.items() if key != 'strategic_recommendations' %}
+                <div class="kpi-card">
+                    <div class="kpi-label">{{ key.replace('_', ' ').title() }}</div>
+                    <div class="kpi-value">{{ value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">How Jarvix Processed This File</div>
+                <div class="section-badge">Pipeline</div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Capability</th>
+                        <th>Component handling it</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>File Acquisition</td>
+                        <td>DataScienceAgent</td>
+                        <td>Loads files directly from the exact path you provided.</td>
+                    </tr>
+                    <tr>
+                        <td>Jarvix Flash</td>
+                        <td>Designs a tailored analysis plan and code instructions.</td>
+                    </tr>
+                    <tr>
+                        <td>Feature Engineering</td>
+                        <td>Dynamic Python execution</td>
+                        <td>Prepares the dataset, creates new signals, and cleans anomalies.</td>
+                    </tr>
+                    <tr>
+                        <td>Visual Insight Generation</td>
+                        <td>Matplotlib & Seaborn</td>
+                        <td>Produces visuals saved to a secure temporary area.</td>
+                    </tr>
+                    <tr>
+                        <td>Report Assembly</td>
+                        <td>WeasyPrint & Jinja2</td>
+                        <td>Presents the findings in this PDF format.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Recommended Enhancements</div>
+                <div class="section-badge">Next Iterations</div>
+            </div>
+            <ul>
+                <li><strong>Predictive analytics agent:</strong> forecast future trajectories using ARIMA, Prophet, or LSTM models.</li>
+                <li><strong>Anomaly sentinel:</strong> surface outliers or irregular behaviours worth a manual review.</li>
+                <li><strong>Comparison workspace:</strong> allow side-by-side benchmarking across multiple files.</li>
+                <li><strong>Live connectors:</strong> stream data directly from databases, APIs, or cloud storage.</li>
+                <li><strong>Automated scheduling:</strong> re-run key analyses automatically and email updated results.</li>
+                <li><strong>Interactive dashboards:</strong> publish HTML dashboards with drill-down and filter controls.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Example Use Cases</div>
+                <div class="section-badge">Ideas</div>
+            </div>
+            <div class="example-box">
+                <div class="example-title">Sales & Revenue Tracking</div>
+                <p class="example-text">“Analyse <code>/data/reports/sales_q4.csv</code>, highlight revenue leaders, and export a PDF with actionable insights for the team.”</p>
+            </div>
+            <div class="example-box">
+                <div class="example-title">Operational Health</div>
+                <p class="example-text">“Review <code>/analytics/warehouse/telemetry.json</code>, list KPIs, and flag any metrics outside expected ranges.”</p>
+            </div>
+            <div class="example-box">
+                <div class="example-title">Content Intelligence</div>
+                <p class="example-text">“Summarise <code>/docs/board_weekly.docx</code>, capture the top five strategic decisions, and outline next actions.”</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Analysis Snapshot</div>
+                <div class="section-badge">Metrics</div>
+            </div>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">Visualisations</div>
+                    <div class="kpi-value">{{ chart_paths|length if chart_paths else 0 }}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Recommendations</div>
+                    <div class="kpi-value">{{ strategic_recommendations|length if strategic_recommendations else 0 }}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Summary Fields</div>
+                    <div class="kpi-value">{{ analysis_summary|length if analysis_summary else 0 }}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Potential Enhancements</div>
+                    <div class="kpi-value">6</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section charts-section">
+            <div class="section-header">
+                <div class="section-title">Visual Evidence</div>
+                <div class="section-badge">Charts</div>
+            </div>
+            {% if chart_paths %}
+                {% for chart_path in chart_paths %}
+                <div class="chart-container">
+                    <div class="chart-wrapper">
+                        <div class="chart-number">{{ loop.index }}</div>
+                        <img src="{{ chart_path }}" alt="Data visualisation {{ loop.index }}">
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="empty-state">No visualisations were produced for this dataset.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="footer">
+        <strong>Jarvix Final</strong> · Cognitive Operating System · {{ file_name }}
+    </div>
+</body>
+</html>
