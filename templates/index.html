@@ -1,47 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jarvix 👋 Completed - AI Assistant</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
     <div class="main-container">
-        <header class="app-header">
-            <div>
-            <h1>Jarvix <span>👋 Completed</span></h1>
-                <p class="header-note">For file analysis, include the full path (e.g. <code>/home/user/data/report.csv</code>) to keep things precise and secure.</p>
-            </div>
-        </header>
-        <div id="chat-container" class="chat-container"></div>
-        <div class="bottom-panel">
-             <form id="chat-form" class="chat-form">
-                <textarea id="user-input" placeholder="Ask a question or request an analysis (e.g., analyze 'data.csv')" rows="1"></textarea>
-                <button type="button" id="mic-button" class="icon-button" aria-label="Activate Voice Control">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 18.75a6 6 0 006-6v-1.5a6 6 0 00-12 0v1.5a6 6 0 006 6zM10.5 11.25a1.5 1.5 0 113 0v6a1.5 1.5 0 11-3 0v-6z"></path></svg>
-                </button>
-                <button type="button" id="tts-toggle" class="icon-button" aria-label="Toggle Text-to-Speech">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .398.029.79.082 1.178.342 1.24 1.519 1.905 2.66 1.905H6.44l4.5 4.5c.944.945 2.56.276 2.56-1.06V4.06zM18.584 12c0-1.833-.91-3.49-2.277-4.444a.75.75 0 10-.916 1.189A2.989 2.989 0 0116.084 12a2.989 2.989 0 01-1.693 2.755.75.75 0 10.916 1.189c1.368-.953 2.277-2.61 2.277-4.444z"></path></svg>
-                </button>
-                <button type="submit" id="submit-button" class="icon-button submit" aria-label="Send">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
-                </button>
-            </form>
+      <header class="app-header">
+        <div>
+          <h1>Jarvix <span>👋 Completed</span></h1>
+          <p class="header-note">
+            For file analysis, include the full path (e.g.
+            <code>/home/user/data/report.csv</code>) to keep things precise and
+            secure.
+          </p>
         </div>
+      </header>
+      <div id="chat-container" class="chat-container"></div>
+      <div class="bottom-panel">
+        <form id="chat-form" class="chat-form">
+          <textarea
+            id="user-input"
+            placeholder="Ask a question or request an analysis (e.g., analyze 'data.csv')"
+            rows="1"
+          ></textarea>
+          <button
+            type="button"
+            id="mic-button"
+            class="icon-button"
+            aria-label="Activate Voice Control"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              width="22"
+              height="22"
+            >
+              <path
+                d="M12 18.75a6 6 0 006-6v-1.5a6 6 0 00-12 0v1.5a6 6 0 006 6zM10.5 11.25a1.5 1.5 0 113 0v6a1.5 1.5 0 11-3 0v-6z"
+              ></path>
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="tts-toggle"
+            class="icon-button"
+            aria-label="Toggle Text-to-Speech"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              width="22"
+              height="22"
+            >
+              <path
+                d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .398.029.79.082 1.178.342 1.24 1.519 1.905 2.66 1.905H6.44l4.5 4.5c.944.945 2.56.276 2.56-1.06V4.06zM18.584 12c0-1.833-.91-3.49-2.277-4.444a.75.75 0 10-.916 1.189A2.989 2.989 0 0116.084 12a2.989 2.989 0 01-1.693 2.755.75.75 0 10.916 1.189c1.368-.953 2.277-2.61 2.277-4.444z"
+              ></path>
+            </svg>
+          </button>
+          <button
+            type="submit"
+            id="submit-button"
+            class="icon-button submit"
+            aria-label="Send"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              width="20"
+              height="20"
+            >
+              <path
+                d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z"
+              />
+            </svg>
+          </button>
+        </form>
+      </div>
     </div>
     <div id="voice-modal" class="voice-modal hidden">
-        <div class="modal-content">
-            <div id="mic-icon-modal" class="mic-icon">
-                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="48" height="48"><path d="M12 18.75a6 6 0 006-6v-1.5a6 6 0 00-12 0v1.5a6 6 0 006 6zM10.5 11.25a1.5 1.5 0 113 0v6a1.5 1.5 0 11-3 0v-6z"></path></svg>
-            </div>
-            <p id="voice-modal-status">Listening...</p>
-            <button id="close-modal-btn">Cancel</button>
+      <div class="modal-content">
+        <div id="mic-icon-modal" class="mic-icon">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            width="48"
+            height="48"
+          >
+            <path
+              d="M12 18.75a6 6 0 006-6v-1.5a6 6 0 00-12 0v1.5a6 6 0 006 6zM10.5 11.25a1.5 1.5 0 113 0v6a1.5 1.5 0 11-3 0v-6z"
+            ></path>
+          </svg>
         </div>
+        <p id="voice-modal-status">Listening...</p>
+        <button id="close-modal-btn">Cancel</button>
+      </div>
     </div>
     <script src="/static/script.js"></script>
-</body>
+  </body>
 </html>

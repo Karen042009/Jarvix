@@ -22,6 +22,9 @@ OUTPUT_DIR = os.path.join(USER_HOME, 'Desktop')
 TEMP_CHART_DIR = os.path.join(OUTPUT_DIR, 'jarvix_temp_charts')
 os.makedirs(TEMP_CHART_DIR, exist_ok=True)
 
+# Number of charts to generate (can be overridden with environment variable NUM_CHARTS)
+NUM_CHARTS = int(os.getenv('NUM_CHARTS', '3'))
+
 # Safety settings for Jarvix API calls to prevent unnecessary blocking.
 SAFETY_SETTINGS = {
     HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -31,7 +34,7 @@ SAFETY_SETTINGS = {
 }
 
 # --- DYNAMIC MULTI-STEP AI ANALYSIS ---
-def get_ai_plan(df_head: str, columns: List[str], df_stats: str = "") -> Dict[str, Any]:
+def get_ai_plan(df_head: str, columns: List[str], df_stats: str = "", num_charts: int = NUM_CHARTS) -> Dict[str, Any]:
     """Step 1: Ask Jarvix to create a strategic plan as a JSON object."""
     model = genai.GenerativeModel('gemini-flash-latest')
     prompt = f"""
@@ -47,9 +50,9 @@ You are an expert strategic data analyst and business intelligence specialist. B
 {columns}
 
 **Your output MUST be a valid JSON object** with three keys:
-1.  `"strategic_recommendations"`: A list of 4-6 strings with specific, actionable advice (e.g., "Identify trends in 'column_X'", "Segment data by 'column_Y'", "Detect outliers in 'column_Z'").
+1.  `"strategic_recommendations"`: A list of 3-6 strings with specific, actionable advice (e.g., "Identify trends in 'column_X'", "Segment data by 'column_Y'", "Detect outliers in 'column_Z'").
 2.  `"feature_engineering_code"`: A string containing Python code to preprocess the data and create new features. This code will modify the DataFrame `df`. IMPORTANT: Only use variables that are already defined (df, pd, np, os). Do NOT reference variables that don't exist. Each line should be self-contained and not depend on variables created in previous lines unless you explicitly create them.
-3.  `"visualization_code"`: A string containing Python code to generate 4-5 INSIGHTFUL visualizations. CRITICAL: Only use plt (matplotlib) functions like plt.figure(), plt.plot(), plt.hist(), plt.bar(), plt.scatter(), plt.boxplot(), sns.heatmap(), sns.countplot(). NEVER use sns.pie() - use plt.pie() instead. NEVER use functions that don't exist. Save each chart with plt.savefig(path, dpi=150, bbox_inches='tight'), append to chart_paths, then call plt.close().
+3.  `"visualization_code"`: A string containing Python code to generate exactly {num_charts} INSIGHTFUL visualizations that tell a story. This code MUST use the processed `df` and save each plot to a file in `TEMP_CHART_DIR`, appending the path to a `chart_paths` list. IMPORTANT: Use `plt.savefig()` to save each chart with high DPI (150), append path to `chart_paths`, then call `plt.close()` to free memory. Make visualizations professional with good titles and labels.
 
 Example JSON output structure:
 ```json
@@ -140,7 +143,7 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
         df_stats = df.describe().to_string()
         
         # --- STEP 1: GET THE AI'S STRATEGIC PLAN ---
-        ai_plan = get_ai_plan(df.head().to_string(), list(df.columns), df_stats)
+        ai_plan = get_ai_plan(df.head().to_string(), list(df.columns), df_stats, NUM_CHARTS)
         feature_engineering_code = ai_plan.get("feature_engineering_code", "")
         visualization_code = ai_plan.get("visualization_code", "")
         strategic_recommendations = ai_plan.get("strategic_recommendations", [])
@@ -193,6 +196,22 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
         plt.savefig = original_savefig
 
         chart_paths = local_scope.get('chart_paths', [])
+        # Ensure we only keep up to NUM_CHARTS charts
+        if len(chart_paths) > NUM_CHARTS:
+            # Keep first NUM_CHARTS, remove the extra files if they exist
+            extra = chart_paths[NUM_CHARTS:]
+            chart_paths = chart_paths[:NUM_CHARTS]
+            for p in extra:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+        elif len(chart_paths) < NUM_CHARTS:
+            # Not enough charts were produced; include a warning in the summary
+            analysis_summary.setdefault('warnings', []).append(
+                f"Requested {NUM_CHARTS} charts but AI produced {len(chart_paths)}."
+            )
         analysis_summary = local_scope.get('analysis_summary', {})
         if not chart_paths:
              return "⚠️ **Warning:** The AI-generated plan did not produce any valid chart files."
