@@ -145,6 +145,26 @@ class CalendarAgent(BaseAgent):
         await asyncio.sleep(1)
         yield "👍 **Success:** Event scheduled (simulation)."
 
+class CustomPromptAgent(BaseAgent):
+    """Allows user to write custom prompts directly to Gemini without pre-defined agents."""
+    keywords = []  # This agent requires explicit detection
+    
+    async def execute(self, prompt: str, websocket, command_id: str = None) -> AsyncGenerator[str, None]:
+        """Execute user's custom prompt directly with Gemini."""
+        model = genai.GenerativeModel('gemini-flash-latest')
+        try:
+            yield "✨ **Custom Analysis Mode**: Processing your prompt..."
+            response = await model.generate_content_async(prompt, stream=True, safety_settings=SAFETY_SETTINGS)
+            has_sent_content = False
+            async for chunk in response:
+                if chunk and chunk.text:
+                    has_sent_content = True
+                    await websocket.send_json({"type": "stream", "id": command_id, "message": chunk.text})
+            if not has_sent_content:
+                await websocket.send_json({"type": "stream", "id": command_id, "message": "[Response was empty or blocked]"})
+        except Exception as e:
+            yield f"❌ **Custom Analysis Error:** {e}"
+
 class ConversationalAgent(BaseAgent):
     """The default agent for general conversation."""
     keywords = []
@@ -178,8 +198,22 @@ Sign your responses as "Jarvix 👋 Completed" to maintain brand consistency."""
 # --- AGENT REGISTRY & ROUTER ---
 SPECIFIC_AGENTS: List[Type[BaseAgent]] = [ DataScienceAgent, CalendarAgent ]
 
+def detect_custom_prompt_mode(prompt: str) -> bool:
+    """Detect if user is in custom prompt mode by checking for special marker."""
+    return prompt.strip().lower().startswith('custom:')
+
 async def jarvix_main_router(prompt: str, websocket, command_id: str = None) -> AsyncGenerator[str, None]:
     """Finds the appropriate agent and executes the prompt."""
+    
+    # Check for custom prompt mode first
+    if detect_custom_prompt_mode(prompt):
+        custom_agent = CustomPromptAgent()
+        # Remove marker and execute
+        clean_prompt = prompt[7:].strip()  # Remove "CUSTOM:"
+        async for log in custom_agent.execute(clean_prompt, websocket, command_id):
+            yield log
+        return
+    
     for agent_class in SPECIFIC_AGENTS:
         if agent_class.can_handle(prompt):
             agent_instance = agent_class()

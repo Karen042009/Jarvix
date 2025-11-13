@@ -17,13 +17,13 @@ import json
 
 # --- CONFIGURATION ---
 genai.configure(api_key=settings.GOOGLE_API_KEY)
-USER_HOME = os.path.expanduser('~')
-OUTPUT_DIR = os.path.join(USER_HOME, 'Desktop')
-TEMP_CHART_DIR = os.path.join(OUTPUT_DIR, 'jarvix_temp_charts')
+USER_HOME = os.path.expanduser("~")
+OUTPUT_DIR = os.path.join(USER_HOME, "Desktop")
+TEMP_CHART_DIR = os.path.join(OUTPUT_DIR, "jarvix_temp_charts")
 os.makedirs(TEMP_CHART_DIR, exist_ok=True)
 
 # Number of charts to generate (can be overridden with environment variable NUM_CHARTS)
-NUM_CHARTS = int(os.getenv('NUM_CHARTS', '3'))
+NUM_CHARTS = int(os.getenv("NUM_CHARTS", "3"))
 
 # Safety settings for Jarvix API calls to prevent unnecessary blocking.
 SAFETY_SETTINGS = {
@@ -33,10 +33,13 @@ SAFETY_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
+
 # --- DYNAMIC MULTI-STEP AI ANALYSIS ---
-def get_ai_plan(df_head: str, columns: List[str], df_stats: str = "", num_charts: int = NUM_CHARTS) -> Dict[str, Any]:
+def get_ai_plan(
+    df_head: str, columns: List[str], df_stats: str = "", num_charts: int = NUM_CHARTS
+) -> Dict[str, Any]:
     """Step 1: Ask Jarvix to create a strategic plan as a JSON object."""
-    model = genai.GenerativeModel('gemini-flash-latest')
+    model = genai.GenerativeModel("gemini-flash-latest")
     prompt = f"""
 You are an expert strategic data analyst and business intelligence specialist. Based on the data preview, columns, and statistics, create a comprehensive analysis plan.
 
@@ -81,35 +84,42 @@ Example JSON output structure:
     try:
         response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
         # Clean the response to ensure it's valid JSON
-        json_text_match = re.search(r'```json\n([\s\S]*?)```', response.text)
+        json_text_match = re.search(r"```json\n([\s\S]*?)```", response.text)
         if not json_text_match:
             # Try plain text search if the markdown block is missing
-            json_text_match = re.search(r'\{[\s\S]*\}', response.text)
-        
+            json_text_match = re.search(r"\{[\s\S]*\}", response.text)
+
         if not json_text_match:
             raise ValueError("AI response did not contain a valid JSON block.")
-        
-        json_text = json_text_match.group(0).replace('```json\n', '').replace('```', '')
+
+        json_text = json_text_match.group(0).replace("```json\n", "").replace("```", "")
         plan = json.loads(json_text)
         return plan
     except (ValueError, AttributeError, json.JSONDecodeError) as e:
-        raise ValueError(f"Failed to parse AI plan. Jarvix's raw response might be invalid. Error: {e}\nResponse: {response.text}")
+        raise ValueError(
+            f"Failed to parse AI plan. Jarvix's raw response might be invalid. Error: {e}\nResponse: {response.text}"
+        )
+
 
 # --- REPORTING ---
-def generate_pdf_report(base_dir: Path, csv_path: str, summary: Dict[str, Any], charts: List[str]) -> str:
+def generate_pdf_report(
+    base_dir: Path, csv_path: str, summary: Dict[str, Any], charts: List[str]
+) -> str:
     """Generates a PDF report from the analysis results."""
     templates_dir = base_dir / "templates_pdf"
     env = Environment(loader=FileSystemLoader(templates_dir))
 
     try:
-        template = env.get_template('professional_report_template.html')
+        template = env.get_template("professional_report_template.html")
     except Exception as e:
-        raise FileNotFoundError(f"Could not find 'professional_report_template.html' in '{templates_dir}'. Error: {e}")
+        raise FileNotFoundError(
+            f"Could not find 'professional_report_template.html' in '{templates_dir}'. Error: {e}"
+        )
 
     now = datetime.now()
     base_path = Path(csv_path)
     dataset_slug = base_path.stem
-    dataset_label = dataset_slug.replace('_', ' ').replace('-', ' ').title()
+    dataset_label = dataset_slug.replace("_", " ").replace("-", " ").title()
     timestamp = now.strftime("%Y%m%d_%H%M%S")
 
     template_vars = {
@@ -118,9 +128,9 @@ def generate_pdf_report(base_dir: Path, csv_path: str, summary: Dict[str, Any], 
         "generation_date": now.strftime("%Y-%m-%d %H:%M:%S"),
         "file_name": base_path.name,
         "file_path": csv_path,
-        "strategic_recommendations": summary.pop('strategic_recommendations', []),
+        "strategic_recommendations": summary.pop("strategic_recommendations", []),
         "analysis_summary": summary,
-        "chart_paths": charts
+        "chart_paths": charts,
     }
     html_out = template.render(template_vars)
     report_filename = f"Jarvix_Report_{dataset_slug}_{timestamp}.pdf"
@@ -128,22 +138,29 @@ def generate_pdf_report(base_dir: Path, csv_path: str, summary: Dict[str, Any], 
     HTML(string=html_out, base_url=str(TEMP_CHART_DIR)).write_pdf(report_path)
     return report_path
 
+
 # --- MAIN PIPELINE ---
 def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
     """The main multi-step function Jarvix will call."""
     try:
         # Ensure TEMP_CHART_DIR exists before starting analysis
         os.makedirs(TEMP_CHART_DIR, exist_ok=True)
-        
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found at '{file_path}'.")
-        df = pd.read_csv(file_path) if file_path.endswith('.csv') else pd.read_excel(file_path)
+        df = (
+            pd.read_csv(file_path)
+            if file_path.endswith(".csv")
+            else pd.read_excel(file_path)
+        )
 
         # --- STEP 0: GATHER ENHANCED STATISTICS ---
         df_stats = df.describe().to_string()
-        
+
         # --- STEP 1: GET THE AI'S STRATEGIC PLAN ---
-        ai_plan = get_ai_plan(df.head().to_string(), list(df.columns), df_stats, NUM_CHARTS)
+        ai_plan = get_ai_plan(
+            df.head().to_string(), list(df.columns), df_stats, NUM_CHARTS
+        )
         feature_engineering_code = ai_plan.get("feature_engineering_code", "")
         visualization_code = ai_plan.get("visualization_code", "")
         strategic_recommendations = ai_plan.get("strategic_recommendations", [])
@@ -151,6 +168,7 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
         # --- STEP 2: EXECUTE FEATURE ENGINEERING ---
         # Create a safe savefig wrapper that ensures directories exist
         original_savefig = plt.savefig
+
         def safe_savefig(*args, **kwargs):
             """Wrapper for plt.savefig that ensures parent directory exists."""
             if args:
@@ -159,14 +177,22 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
                 if parent_dir and not os.path.exists(parent_dir):
                     os.makedirs(parent_dir, exist_ok=True)
             return original_savefig(*args, **kwargs)
-        
+
         # Monkey-patch plt.savefig to use our safe version
         plt.savefig = safe_savefig
-        
+
         local_scope = {
-            'df': df, 'pd': pd, 'plt': plt, 'sns': sns, 'np': np, 'os': os,
-            'TEMP_CHART_DIR': TEMP_CHART_DIR, 'chart_paths': [],
-            'analysis_summary': {"strategic_recommendations": strategic_recommendations}
+            "df": df,
+            "pd": pd,
+            "plt": plt,
+            "sns": sns,
+            "np": np,
+            "os": os,
+            "TEMP_CHART_DIR": TEMP_CHART_DIR,
+            "chart_paths": [],
+            "analysis_summary": {
+                "strategic_recommendations": strategic_recommendations
+            },
         }
         if feature_engineering_code:
             try:
@@ -177,12 +203,12 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
             except Exception as e:
                 error_msg = f"Error in feature engineering code: {str(e)}"
                 return f"❌ **Feature Engineering Error:** {error_msg}"
-        
+
         # --- STEP 3: EXECUTE VISUALIZATIONS ---
         if visualization_code:
             # Ensure chart_paths list exists in local scope
-            if 'chart_paths' not in local_scope:
-                local_scope['chart_paths'] = []
+            if "chart_paths" not in local_scope:
+                local_scope["chart_paths"] = []
             try:
                 exec(visualization_code, globals(), local_scope)
             except NameError as e:
@@ -195,7 +221,7 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
         # Restore original plt.savefig
         plt.savefig = original_savefig
 
-        chart_paths = local_scope.get('chart_paths', [])
+        chart_paths = local_scope.get("chart_paths", [])
         # Ensure we only keep up to NUM_CHARTS charts
         if len(chart_paths) > NUM_CHARTS:
             # Keep first NUM_CHARTS, remove the extra files if they exist
@@ -209,20 +235,23 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
                     pass
         elif len(chart_paths) < NUM_CHARTS:
             # Not enough charts were produced; include a warning in the summary
-            analysis_summary.setdefault('warnings', []).append(
+            analysis_summary.setdefault("warnings", []).append(
                 f"Requested {NUM_CHARTS} charts but AI produced {len(chart_paths)}."
             )
-        analysis_summary = local_scope.get('analysis_summary', {})
+        analysis_summary = local_scope.get("analysis_summary", {})
         if not chart_paths:
-             return "⚠️ **Warning:** The AI-generated plan did not produce any valid chart files."
+            return "⚠️ **Warning:** The AI-generated plan did not produce any valid chart files."
 
         # --- STEP 4: GENERATE PDF ---
-        report_path = generate_pdf_report(base_dir, file_path, analysis_summary, chart_paths)
-        
+        report_path = generate_pdf_report(
+            base_dir, file_path, analysis_summary, chart_paths
+        )
+
         # Clean up temporary chart images
         for path in chart_paths:
-            if os.path.exists(path): os.remove(path)
-        
+            if os.path.exists(path):
+                os.remove(path)
+
         return f"👍 **Success:** AI-driven analysis is complete. Strategic report saved to: `{report_path}`"
     except Exception:
         tb_lines = traceback.format_exc().splitlines()
