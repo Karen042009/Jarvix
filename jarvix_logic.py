@@ -3,6 +3,7 @@ import asyncio
 import re
 from typing import AsyncGenerator, Type, List
 import google.generativeai as genai
+import pandas as pd
 from config import settings, BASE_DIR
 from agents.data_scientist import run_dynamic_analysis, SAFETY_SETTINGS
 
@@ -10,6 +11,7 @@ from agents.data_scientist import run_dynamic_analysis, SAFETY_SETTINGS
 genai.configure(api_key=settings.GOOGLE_API_KEY)
 USER_HOME = os.path.expanduser("~")
 DOWNLOADS_DIR = os.path.join(USER_HOME, "Downloads")
+MUSIC_EXTENSIONS = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma'}
 
 # --- Agent Base Class ---
 class BaseAgent:
@@ -39,7 +41,39 @@ class DataScienceAgent(BaseAgent):
         if full_path_match:
             file_path = full_path_match.group(1).strip()
             if os.path.exists(file_path):
-                yield f"🔍 File found at `{file_path}`. Engaging AI..."
+                yield f"🔍 File found at `{file_path}`. Loading data..."
+                await asyncio.sleep(0.5)
+                
+                # Extract and send column information
+                try:
+                    if file_path.endswith('.csv'):
+                        df = pd.read_csv(file_path)
+                    else:
+                        df = pd.read_excel(file_path)
+                    
+                    # Get all columns
+                    all_columns = list(df.columns)
+                    
+                    # Filter out music-related or non-numeric columns
+                    relevant_columns = [col for col in all_columns 
+                                       if not any(ext in col.lower() for ext in MUSIC_EXTENSIONS)]
+                    
+                    # Send column information
+                    columns_info = f"""
+📊 **Dataset Overview:**
+- Total Columns: {len(all_columns)}
+- Total Rows: {len(df)}
+
+📋 **Available Columns for Analysis:**
+{chr(10).join([f"  • {col} ({df[col].dtype})" for col in relevant_columns])}
+"""
+                    await websocket.send_json({"type": "stream", "id": command_id, "message": columns_info})
+                    await asyncio.sleep(0.3)
+                    
+                except Exception as e:
+                    yield f"⚠️ **Warning:** Could not read column info: {str(e)}"
+                
+                yield f"🚀 Engaging AI for analysis..."
                 await asyncio.sleep(1)
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, run_dynamic_analysis, BASE_DIR, file_path)
@@ -63,7 +97,39 @@ class DataScienceAgent(BaseAgent):
             yield f"❌ **Error:** File `{filename}` not found in Downloads or project directory."
             return
             
-        yield f"🔍 File found at `{file_path}`. Engaging AI..."
+        yield f"🔍 File found at `{file_path}`. Loading data..."
+        await asyncio.sleep(0.5)
+        
+        # Extract and send column information
+        try:
+            if file_path.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+            
+            # Get all columns
+            all_columns = list(df.columns)
+            
+            # Filter out music-related or non-numeric columns
+            relevant_columns = [col for col in all_columns 
+                               if not any(ext in col.lower() for ext in MUSIC_EXTENSIONS)]
+            
+            # Send column information
+            columns_info = f"""
+📊 **Dataset Overview:**
+- Total Columns: {len(all_columns)}
+- Total Rows: {len(df)}
+
+📋 **Available Columns for Analysis:**
+{chr(10).join([f"  • {col} ({df[col].dtype})" for col in relevant_columns])}
+"""
+            await websocket.send_json({"type": "stream", "id": command_id, "message": columns_info})
+            await asyncio.sleep(0.3)
+            
+        except Exception as e:
+            yield f"⚠️ **Warning:** Could not read column info: {str(e)}"
+        
+        yield f"🚀 Engaging AI for analysis..."
         await asyncio.sleep(1)
 
         # Run the heavy data processing in a separate thread to not block the server
@@ -80,16 +146,16 @@ class CalendarAgent(BaseAgent):
         yield "👍 **Success:** Event scheduled (simulation)."
 
 class ConversationalAgent(BaseAgent):
-    """The default agent for general conversation, powered by Gemini."""
+    """The default agent for general conversation."""
     keywords = []
     
     # System instructions to ensure English language responses
-    SYSTEM_INSTRUCTIONS = """You are Jarvix ✅ Completed, an intelligent AI assistant powered by Google Gemini.
+    SYSTEM_INSTRUCTIONS = """You are Jarvix 👋 Completed, an intelligent AI assistant.
 Your role is to help users provide accurate, helpful, and professional assistance.
 ALWAYS RESPOND IN ENGLISH, regardless of what language the user writes in.
 Be friendly, professional, knowledgeable, and helpful.
 If the question is in another language, respond in English while preserving the meaning of the question.
-Sign your responses as "Jarvix ✅ Completed" to maintain brand consistency."""
+Sign your responses as "Jarvix 👋 Completed" to maintain brand consistency."""
     
     async def execute(self, prompt: str, websocket, command_id: str = None) -> AsyncGenerator[str, None]:
         model = genai.GenerativeModel(
@@ -97,7 +163,7 @@ Sign your responses as "Jarvix ✅ Completed" to maintain brand consistency."""
             system_instruction=self.SYSTEM_INSTRUCTIONS
         )
         try:
-            yield "🤖 **Jarvix ✅ Completed** - Powered by Gemini" # Signal agent activation
+            yield "🤖 **Jarvix 👋 Completed**" # Signal agent activation
             response = await model.generate_content_async(prompt, stream=True, safety_settings=SAFETY_SETTINGS)
             has_sent_content = False
             async for chunk in response:
@@ -107,7 +173,7 @@ Sign your responses as "Jarvix ✅ Completed" to maintain brand consistency."""
             if not has_sent_content:
                 await websocket.send_json({"type": "stream", "id": command_id, "message": "[Response was empty or blocked]"})
         except Exception as e:
-            yield f"❌ **Gemini API Error:** {e}"
+            yield f"❌ **Jarvix API Error:** {e}"
 
 # --- AGENT REGISTRY & ROUTER ---
 SPECIFIC_AGENTS: List[Type[BaseAgent]] = [ DataScienceAgent, CalendarAgent ]

@@ -31,38 +31,49 @@ SAFETY_SETTINGS = {
 }
 
 # --- DYNAMIC MULTI-STEP AI ANALYSIS ---
-def get_ai_plan(df_head: str, columns: List[str]) -> Dict[str, Any]:
+def get_ai_plan(df_head: str, columns: List[str], df_stats: str = "") -> Dict[str, Any]:
     """Step 1: Ask Jarvix to create a strategic plan as a JSON object."""
     model = genai.GenerativeModel('gemini-flash-latest')
     prompt = f"""
-You are a strategic data analyst. Based on the data preview and columns, create an analysis plan.
+You are an expert strategic data analyst and business intelligence specialist. Based on the data preview, columns, and statistics, create a comprehensive analysis plan.
 
 **Data Preview (df.head()):**
 {df_head}
+
+**Data Statistics:**
+{df_stats}
 
 **Columns available:**
 {columns}
 
 **Your output MUST be a valid JSON object** with three keys:
-1.  `"strategic_recommendations"`: A list of strings with advice (e.g., "Drop column X", "Create feature Y").
-2.  `"feature_engineering_code"`: A string containing Python code to preprocess the data and create the new features you recommended. This code will modify the DataFrame `df`. IMPORTANT: Only use variables that are already defined (df, pd, np, os). Do NOT reference variables that don't exist. Each line should be self-contained and not depend on variables created in previous lines unless you explicitly create them.
-3.  `"visualization_code"`: A string containing Python code to generate at least four insightful visualizations. This code MUST use the processed `df` and save each plot to a file in `TEMP_CHART_DIR`, appending the path to a `chart_paths` list. IMPORTANT: Use `plt.savefig()` to save each chart, then append the path to `chart_paths`, then call `plt.close()` to free memory.
+1.  `"strategic_recommendations"`: A list of 4-6 strings with specific, actionable advice (e.g., "Identify trends in 'column_X'", "Segment data by 'column_Y'", "Detect outliers in 'column_Z'").
+2.  `"feature_engineering_code"`: A string containing Python code to preprocess the data and create new features. This code will modify the DataFrame `df`. IMPORTANT: Only use variables that are already defined (df, pd, np, os). Do NOT reference variables that don't exist. Each line should be self-contained and not depend on variables created in previous lines unless you explicitly create them.
+3.  `"visualization_code"`: A string containing Python code to generate 4-5 INSIGHTFUL visualizations. CRITICAL: Only use plt (matplotlib) functions like plt.figure(), plt.plot(), plt.hist(), plt.bar(), plt.scatter(), plt.boxplot(), sns.heatmap(), sns.countplot(). NEVER use sns.pie() - use plt.pie() instead. NEVER use functions that don't exist. Save each chart with plt.savefig(path, dpi=150, bbox_inches='tight'), append to chart_paths, then call plt.close().
 
 Example JSON output structure:
 ```json
 {{
     "strategic_recommendations": [
-        "The 'timestamp' column is critical for time-series analysis.",
-        "The 'ip_address' can be used to approximate unique visitors."
+        "Browser and device distribution shows high mobile traffic",
+        "Identify top IP addresses and geographic patterns",
+        "Analyze referrer sources to understand traffic channels",
+        "Examine temporal patterns in user access",
+        "Correlation between device type and user engagement"
     ],
-    "feature_engineering_code": "df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')\\ndf.dropna(subset=['timestamp'], inplace=True)\\ndf['hour'] = df['timestamp'].dt.hour\\ndf['visits_per_ip'] = df.groupby('ip_address')['ip_address'].transform('count')",
-    "visualization_code": "plt.figure(figsize=(12, 6))\\nsns.countplot(data=df, x='hour')\\nplt.title('Visits by Hour')\\nchart_path = os.path.join(TEMP_CHART_DIR, 'hourly_visits.png')\\nplt.savefig(chart_path)\\nchart_paths.append(chart_path)\\nplt.close()"
+    "feature_engineering_code": "df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')\\ndf['hour'] = df['timestamp'].dt.hour\\ndf['day_of_week'] = df['timestamp'].dt.day_name()\\ndf['is_mobile_or_tablet'] = df['is_mobile'] | df['is_tablet']",
+    "visualization_code": "plt.figure(figsize=(14, 6))\\nplt.hist([df[df['is_mobile']==True].shape[0], df[df['is_pc']==True].shape[0]], label=['Mobile', 'PC'])\\nplt.title('Device Type Distribution', fontsize=16, fontweight='bold')\\nplt.xlabel('Device Type', fontsize=12)\\nplt.ylabel('Count', fontsize=12)\\nchart_path = os.path.join(TEMP_CHART_DIR, '01_devices.png')\\nplt.savefig(chart_path, dpi=150, bbox_inches='tight')\\nchart_paths.append(chart_path)\\nplt.close()\\n\\nplt.figure(figsize=(14, 6))\\nbrowser_counts = df['browser'].value_counts().head(10)\\nplt.bar(range(len(browser_counts)), browser_counts.values)\\nplt.title('Top 10 Browsers', fontsize=16, fontweight='bold')\\nplt.xticks(range(len(browser_counts)), browser_counts.index, rotation=45)\\nchart_path = os.path.join(TEMP_CHART_DIR, '02_browsers.png')\\nplt.savefig(chart_path, dpi=150, bbox_inches='tight')\\nchart_paths.append(chart_path)\\nplt.close()"
 }}
 
-**CRITICAL RULES:**
-- In feature_engineering_code: Only use variables df, pd, np, os. Create new columns directly on df (e.g., df['new_col'] = ...). Do NOT create intermediate variables unless you use them immediately in the same line.
-- In visualization_code: Only use variables df, pd, np, plt, sns, os, TEMP_CHART_DIR, chart_paths. Do NOT reference variables from feature_engineering_code unless they are columns in df.
-- Each line of code should be independent and not rely on variables created in previous lines (unless they are DataFrame columns).
+**CRITICAL RULES - MATPLOTLIB VISUALIZATION FUNCTIONS ONLY:**
+- Use ONLY these functions: plt.figure(), plt.plot(), plt.bar(), plt.hist(), plt.scatter(), plt.boxplot(), plt.pie(), plt.xlim(), plt.ylim(), plt.title(), plt.xlabel(), plt.ylabel(), plt.xticks(), plt.legend()
+- Use sns.heatmap() and sns.countplot() from seaborn when appropriate
+- NEVER use sns.pie() - use plt.pie() instead
+- NEVER use functions that don't exist in matplotlib/seaborn
+- Always save with: plt.savefig(path, dpi=150, bbox_inches='tight') then plt.close()
+- Only use variables: df, pd, np, plt, sns, os, TEMP_CHART_DIR, chart_paths
+- Create new columns in df during feature engineering
+- Each visualization should have a clear title and axis labels
 """
     try:
         response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
@@ -125,8 +136,11 @@ def run_dynamic_analysis(base_dir: Path, file_path: str) -> str:
             raise FileNotFoundError(f"File not found at '{file_path}'.")
         df = pd.read_csv(file_path) if file_path.endswith('.csv') else pd.read_excel(file_path)
 
+        # --- STEP 0: GATHER ENHANCED STATISTICS ---
+        df_stats = df.describe().to_string()
+        
         # --- STEP 1: GET THE AI'S STRATEGIC PLAN ---
-        ai_plan = get_ai_plan(df.head().to_string(), list(df.columns))
+        ai_plan = get_ai_plan(df.head().to_string(), list(df.columns), df_stats)
         feature_engineering_code = ai_plan.get("feature_engineering_code", "")
         visualization_code = ai_plan.get("visualization_code", "")
         strategic_recommendations = ai_plan.get("strategic_recommendations", [])
