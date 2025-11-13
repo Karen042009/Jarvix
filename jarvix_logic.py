@@ -84,11 +84,12 @@ class ConversationalAgent(BaseAgent):
     keywords = []
     
     # System instructions to ensure English language responses
-    SYSTEM_INSTRUCTIONS = """You are Jarvix Final, an intelligent AI assistant.
-Your role is to help users in English.
+    SYSTEM_INSTRUCTIONS = """You are Jarvix ✅ Completed, an intelligent AI assistant powered by Google Gemini.
+Your role is to help users provide accurate, helpful, and professional assistance.
 ALWAYS RESPOND IN ENGLISH, regardless of what language the user writes in.
-Be friendly, professional, and helpful.
-If the question is in another language, respond in English while preserving the meaning of the question."""
+Be friendly, professional, knowledgeable, and helpful.
+If the question is in another language, respond in English while preserving the meaning of the question.
+Sign your responses as "Jarvix ✅ Completed" to maintain brand consistency."""
     
     async def execute(self, prompt: str, websocket, command_id: str = None) -> AsyncGenerator[str, None]:
         model = genai.GenerativeModel(
@@ -96,7 +97,7 @@ If the question is in another language, respond in English while preserving the 
             system_instruction=self.SYSTEM_INSTRUCTIONS
         )
         try:
-            yield "💬 **Gemini Agent**" # Signal agent activation
+            yield "🤖 **Jarvix ✅ Completed** - Powered by Gemini" # Signal agent activation
             response = await model.generate_content_async(prompt, stream=True, safety_settings=SAFETY_SETTINGS)
             has_sent_content = False
             async for chunk in response:
